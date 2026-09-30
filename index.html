@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Loafly order pipeline: a one-file Python script rebuilt as a small production-ready package.">
+<title>Loafly Pipeline Refactor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: single reading column (max 60rem) — the pipeline as an order ticket moving left to right, then evidence from a real run. */
+:root{
+  --bg:#F6F7F4; --surface:#FFFFFF; --fg:#1D211E; --muted:#5F665F; --line:#DCE0D9;
+  --accent:#2E6A4E; --accent-soft:#E3EFE8;
+  --warn:#9A6212; --warn-soft:#F7EBD6; --err:#A63A33; --err-soft:#F6E1DE;
+  --code-bg:#1E2420; --code-fg:#DDE5DF;
+  --f-display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body:"IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono:"IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141715; --surface:#1B1F1C; --fg:#E6EAE6; --muted:#9AA39B; --line:#2C332E;
+  --accent:#7CC4A0; --accent-soft:#1F3329; --warn:#E0A94E; --warn-soft:#352A17; --err:#E98A80; --err-soft:#3A2220;
+  --code-bg:#0E110F; --code-fg:#D3DDD6; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141715; --surface:#1B1F1C; --fg:#E6EAE6; --muted:#9AA39B; --line:#2C332E;
+  --accent:#7CC4A0; --accent-soft:#1F3329; --warn:#E0A94E; --warn-soft:#352A17; --err:#E98A80; --err-soft:#3A2220;
+  --code-bg:#0E110F; --code-fg:#D3DDD6; color-scheme:dark}
+
+*{box-sizing:border-box}
+html{color-scheme:light dark}
+img{max-width:100%}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.6;padding-inline:16px;padding-block:0 64px}
+.wrap{max-width:60rem;margin:0 auto;display:flex;flex-direction:column;gap:56px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;line-height:1.15}
+h1{font-size:clamp(2.2rem,6vw,3.6rem);font-weight:700;letter-spacing:-.02em}
+h2{font-size:1.6rem;font-weight:700}
+h3{font-size:1.1rem;font-weight:500}
+p{margin:0;max-width:65ch}
+.eyebrow{font-family:var(--f-mono);font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.muted{color:var(--muted)}
+section{display:flex;flex-direction:column;gap:20px}
+code,.mono{font-family:var(--f-mono);font-size:.9em}
+code{background:var(--accent-soft);padding:1px 5px;border-radius:4px}
+
+header{padding-top:48px;display:flex;flex-direction:column;gap:16px}
+.meta{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font-family:var(--f-mono);font-size:.8rem;border:1px solid var(--line);border-radius:999px;padding:3px 10px;color:var(--muted);background:var(--surface)}
+
+/* before / after */
+.ba{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.ba > div{min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px;display:flex;flex-direction:column;gap:12px}
+.ba ul{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:6px}
+.tag{align-self:flex-start;font-family:var(--f-mono);font-size:.75rem;padding:2px 8px;border-radius:4px}
+.tag.before{background:var(--err-soft);color:var(--err)}
+.tag.after{background:var(--accent-soft);color:var(--accent)}
+
+/* pipeline flow */
+.flow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;counter-reset:s}
+.stage{min-width:0;border-top:3px solid var(--accent);background:var(--surface);padding:16px;border-radius:0 0 8px 8px;display:flex;flex-direction:column;gap:8px}
+.stage .file{font-family:var(--f-mono);font-size:.85rem;color:var(--accent)}
+.stage p{font-size:.93rem}
+.support{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.support div{min-width:0;border:1px dashed var(--line);border-radius:8px;padding:12px 14px;font-size:.9rem}
+.support .file{font-family:var(--f-mono);font-size:.82rem;color:var(--muted);display:block}
+
+/* questions */
+.qs{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.q{min-width:0;display:grid;grid-template-columns:auto 1fr;gap:4px 12px;padding:16px;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+.q .n{grid-row:span 2;font-family:var(--f-display);font-weight:700;font-size:1.5rem;color:var(--accent);line-height:1}
+.q p{font-size:.92rem;color:var(--muted)}
+.group{font-family:var(--f-mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+
+/* run stats */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.stat{min-width:0;padding:16px;background:var(--surface);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;gap:2px}
+.stat b{font-family:var(--f-display);font-size:2rem;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat span{font-size:.85rem;color:var(--muted)}
+.stat.warn b{color:var(--warn)} .stat.err b{color:var(--err)} .stat.ok b{color:var(--accent)}
+
+/* order chart */
+.chart{display:flex;flex-direction:column;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px}
+.row{display:grid;grid-template-columns:8.5rem 1fr 5.5rem;gap:10px;align-items:center;font-size:.85rem}
+.row .who{font-family:var(--f-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .who small{color:var(--muted)}
+.track{height:14px;background:var(--accent-soft);border-radius:3px;position:relative}
+.bar{height:100%;background:var(--accent);border-radius:3px}
+.row.retry .bar{background:var(--warn)}
+.row.failed .bar{background:var(--err)}
+.row.skip .who::after{content:" •";color:var(--warn)}
+.amt{font-family:var(--f-mono);text-align:right;font-variant-numeric:tabular-nums}
+.legend{display:flex;flex-wrap:wrap;gap:16px;font-size:.82rem;color:var(--muted);padding-top:8px;border-top:1px solid var(--line);margin-top:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+
+/* log */
+.log{background:var(--code-bg);color:var(--code-fg);border-radius:10px;padding:16px 18px;overflow-x:auto;font-family:var(--f-mono);font-size:.8rem;line-height:1.7;margin:0}
+.log .w{color:#E7B35E} .log .e{color:#F0877C} .log .i{color:#8FD0AE} .log .dim{color:#7C877F}
+
+/* decisions */
+.dec{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.dec div{min-width:0;padding:18px;background:var(--surface);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;gap:8px}
+.dec p{font-size:.93rem}
+
+.tree{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px;font-family:var(--f-mono);font-size:.85rem;line-height:1.75;overflow-x:auto;margin:0;white-space:pre}
+.tree .c{color:var(--muted)} .tree .x{color:var(--err)}
+
+/* checklist */
+.checks{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.cg{min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;display:flex;flex-direction:column;gap:12px}
+.cg h3{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.cg h3 small{font-family:var(--f-mono);font-size:.75rem;font-weight:400;color:var(--accent)}
+.cg ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.cg li{display:grid;grid-template-columns:18px 1fr;gap:8px;font-size:.92rem;line-height:1.45}
+.cg li::before{content:"";width:14px;height:14px;margin-top:3px;border-radius:3px;background:var(--accent);
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M0 0h16v16H0z' fill='black'/%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5' stroke='white' stroke-width='2' fill='none'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M0 0h16v16H0z' fill='white'/%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5' stroke='black' stroke-width='2' fill='none'/%3E%3C/svg%3E") center/contain no-repeat;mask-mode:luminance}
+.cg li span{display:block;font-size:.84rem;color:var(--muted)}
+
+@media (max-width:720px){
+  .ba,.qs,.dec,.flow,.support,.checks{grid-template-columns:1fr}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .row{grid-template-columns:6.5rem 1fr 4.8rem}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <span class="eyebrow">Python data pipeline</span>
+  <h1>Loafly Pipeline Refactor</h1>
+  <p class="muted">A one-file nightly script for an online bakery, rebuilt as a small Python package. It cleans the day's order prices, skips bad rows instead of crashing, retries the flaky orders API, and keeps the API key out of the code. Standard library only.</p>
+  <div class="meta"><span class="chip">Python 3.14</span><span class="chip">stdlib only</span><span class="chip">6 modules + runner</span><span class="chip">32 rows · 15 orders</span></div>
+</header>
+
+<section>
+  <span class="eyebrow">The problem</span>
+  <h2>Before and after</h2>
+  <div class="ba">
+    <div>
+      <span class="tag before">legacy_orders.py</span>
+      <ul>
+        <li>Price cleaning copy-pasted inline</li>
+        <li>Discount hard-coded as <code>10</code> in the loop</li>
+        <li>Crashes on the first blank price (order 5004)</li>
+        <li><code>print()</code> only, nothing saved</li>
+        <li>No retry when the orders API is busy</li>
+        <li>API key typed into the code</li>
+      </ul>
+    </div>
+    <div>
+      <span class="tag after">loafly/ package</span>
+      <ul>
+        <li><code>clean_price()</code> and <code>apply_discount()</code> functions</li>
+        <li>An <code>Order</code> class that owns its items and total</li>
+        <li>Blank prices skipped with a WARNING, run completes</li>
+        <li>Timestamped logging to terminal and <code>loafly.log</code></li>
+        <li>Up to 3 save attempts, then an ERROR and move on</li>
+        <li>Key read with <code>os.getenv</code> from a git-ignored <code>.env</code></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">How it runs</span>
+  <h2>run_pipeline.py calls three stages in order</h2>
+  <div class="flow">
+    <div class="stage"><h3>Extract</h3><span class="file">loafly/extract.py</span><p>Reads <code>raw_orders.csv</code> into a list of rows. The file path comes from config.</p></div>
+    <div class="stage"><h3>Transform</h3><span class="file">loafly/transform.py</span><p>Cleans each price inside <code>try / except / else / finally</code> and groups rows into <code>Order</code> objects.</p></div>
+    <div class="stage"><h3>Load</h3><span class="file">loafly/load.py</span><p>Applies the discount and saves each order through <code>gateway.py</code>, with retry.</p></div>
+  </div>
+  <div class="support">
+    <div><span class="file">loafly/config.py</span>One <code>SETTINGS</code> dict plus the API key from the environment.</div>
+    <div><span class="file">loafly/models.py</span>The <code>Order</code> class: <code>add_item()</code> and <code>total()</code>.</div>
+    <div><span class="file">gateway.py</span>Provided API client. Fails about 30% of the time. Not edited.</div>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">What changed</span>
+  <h2>Six improvements, each building on the last</h2>
+  <div class="qs">
+    <div class="q"><span class="n">1</span><h3>Functions</h3><p>One <code>clean_price(text)</code> for every price; <code>apply_discount(price, percent)</code> takes the percent as an argument.</p></div>
+    <div class="q"><span class="n">2</span><h3>OOP</h3><p><code>Order</code> holds <code>order_id</code>, <code>customer</code>, <code>items</code>; totals come from <code>order.total()</code>.</p></div>
+    <div class="q"><span class="n">3</span><h3>Modules and packages</h3><p><code>loafly/</code> with <code>__init__.py</code>, one job per module, and a runner.</p></div>
+    <div class="q"><span class="n">4</span><h3>Config-driven design</h3><p>Currency, discount, input file, retries and wait time all live in <code>SETTINGS</code>.</p></div>
+    <div class="q"><span class="n">5</span><h3>Logging and exceptions</h3><p>No <code>print</code> left. INFO, WARNING and ERROR levels, saved to <code>loafly.log</code>.</p></div>
+    <div class="q"><span class="n">6</span><h3>Retry, environments, secrets</h3><p>Retried save, <code>os.getenv</code> key, <code>.gitignore</code>, <code>env.example</code>, <code>requirements.txt</code>, README.</p></div>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">Evidence · run of 30 Sep 2026, 15:12</span>
+  <h2>What one real run did</h2>
+  <div class="stats">
+    <div class="stat"><b>32</b><span>item rows read</span></div>
+    <div class="stat warn"><b>3</b><span>items skipped (blank price)</span></div>
+    <div class="stat ok"><b>13 / 15</b><span>orders saved</span></div>
+    <div class="stat err"><b>2</b><span>gave up after 3 attempts</span></div>
+  </div>
+
+  <div class="chart" role="img" aria-label="Order totals after 10% discount, in INR, for orders 5001 to 5015">
+    <div class="row"><span class="who">5001 <small>Arjun</small></span><div class="track"><div class="bar" style="width:20.2%"></div></div><span class="amt">297.00</span></div>
+    <div class="row"><span class="who">5002 <small>Kabir</small></span><div class="track"><div class="bar" style="width:35.0%"></div></div><span class="amt">513.00</span></div>
+    <div class="row failed"><span class="who">5003 <small>Aarav</small></span><div class="track"><div class="bar" style="width:45.4%"></div></div><span class="amt">666.00</span></div>
+    <div class="row retry skip"><span class="who">5004 <small>Kabir</small></span><div class="track"><div class="bar" style="width:25.2%"></div></div><span class="amt">369.00</span></div>
+    <div class="row"><span class="who">5005 <small>Reyansh</small></span><div class="track"><div class="bar" style="width:16.6%"></div></div><span class="amt">243.00</span></div>
+    <div class="row"><span class="who">5006 <small>Rohan</small></span><div class="track"><div class="bar" style="width:76.1%"></div></div><span class="amt">1116.00</span></div>
+    <div class="row"><span class="who">5007 <small>Dev</small></span><div class="track"><div class="bar" style="width:25.2%"></div></div><span class="amt">369.00</span></div>
+    <div class="row"><span class="who">5008 <small>Ishita</small></span><div class="track"><div class="bar" style="width:43.6%"></div></div><span class="amt">639.00</span></div>
+    <div class="row skip"><span class="who">5009 <small>Saanvi</small></span><div class="track"><div class="bar" style="width:27.0%"></div></div><span class="amt">396.00</span></div>
+    <div class="row retry"><span class="who">5010 <small>Kabir</small></span><div class="track"><div class="bar" style="width:100%"></div></div><span class="amt">1467.00</span></div>
+    <div class="row failed"><span class="who">5011 <small>Rohan</small></span><div class="track"><div class="bar" style="width:12.9%"></div></div><span class="amt">189.00</span></div>
+    <div class="row retry"><span class="who">5012 <small>Reyansh</small></span><div class="track"><div class="bar" style="width:23.9%"></div></div><span class="amt">351.00</span></div>
+    <div class="row skip"><span class="who">5013 <small>Saanvi</small></span><div class="track"><div class="bar" style="width:9.2%"></div></div><span class="amt">135.00</span></div>
+    <div class="row retry"><span class="who">5014 <small>Aditya</small></span><div class="track"><div class="bar" style="width:41.1%"></div></div><span class="amt">603.00</span></div>
+    <div class="row"><span class="who">5015 <small>Naina</small></span><div class="track"><div class="bar" style="width:9.2%"></div></div><span class="amt">135.00</span></div>
+    <div class="legend">
+      <span><i style="background:var(--accent)"></i>Saved first try</span>
+      <span><i style="background:var(--warn)"></i>Saved after a retry</span>
+      <span><i style="background:var(--err)"></i>Failed 3 times</span>
+      <span><span style="color:var(--warn)">•</span> One item skipped for a blank price</span>
+      <span>Totals in INR after 10% discount</span>
+    </div>
+  </div>
+  <p class="muted" style="font-size:.9rem">The API fails at random, so which orders need a retry changes on every run. The totals and the three skipped items stay the same.</p>
+
+  <pre class="log"><span class="dim">15:12:49</span> <span class="i">INFO   </span> loafly.extract   Read 32 rows from raw_orders.csv
+<span class="dim">15:12:49</span> <span class="w">WARNING</span> loafly.transform Order 5004: skipping 'Chocolate Cake Slice' - missing or bad price ''
+<span class="dim">15:12:49</span> <span class="w">WARNING</span> loafly.transform Order 5009: skipping 'Blueberry Muffin' - missing or bad price ''
+<span class="dim">15:12:49</span> <span class="w">WARNING</span> loafly.transform Order 5013: skipping 'Cookie Box' - missing or bad price ''
+<span class="dim">15:12:49</span> <span class="i">INFO   </span> loafly.transform Checked 32 items, skipped 3, built 15 orders
+<span class="dim">15:12:49</span> <span class="i">INFO   </span> loafly.load      API key loaded from environment (ends ...3a21)
+<span class="dim">15:12:49</span> <span class="w">WARNING</span> loafly.load      Order 5003: attempt 1/3 failed - orders API unavailable
+<span class="dim">15:12:50</span> <span class="w">WARNING</span> loafly.load      Order 5003: attempt 2/3 failed - orders API unavailable
+<span class="dim">15:12:51</span> <span class="w">WARNING</span> loafly.load      Order 5003: attempt 3/3 failed - orders API unavailable
+<span class="dim">15:12:51</span> <span class="e">ERROR  </span> loafly.load      Order 5003: giving up after 3 attempts
+<span class="dim">15:12:51</span> <span class="w">WARNING</span> loafly.load      Order 5004: attempt 1/3 failed - orders API unavailable
+<span class="dim">15:12:52</span> <span class="i">INFO   </span> loafly.load      Order 5004 saved (attempt 2/3)
+<span class="dim">   ...</span>
+<span class="dim">15:12:57</span> <span class="i">INFO   </span> loafly.load      Saved 13 orders, failed 2
+<span class="dim">15:12:57</span> <span class="i">INFO   </span> loafly           Pipeline finished</pre>
+</section>
+
+<section>
+  <span class="eyebrow">Quality checklist</span>
+  <h2>Every requirement, with its proof</h2>
+  <div class="checks">
+    <div class="cg"><h3>Correctness <small>4 / 4</small></h3><ul>
+      <li><div>The pipeline runs end to end<span>"Pipeline finished" after all 15 orders</span></div></li>
+      <li><div>Messy prices are cleaned<span><code>" 1,240"</code> → 1240.0, <code>"320 "</code> → 320.0</span></div></li>
+      <li><div>Bad items are skipped, not fatal<span>3 blank prices skipped; orders 5004, 5009, 5013 still saved</span></div></li>
+      <li><div>Orders are saved with retry<span>13 of 15 saved; 4 needed a second attempt</span></div></li>
+    </ul></div>
+    <div class="cg"><h3>Structure <small>4 / 4</small></h3><ul>
+      <li><div>Clean, reusable functions<span>One <code>clean_price()</code> for every price; <code>apply_discount(price, percent)</code></span></div></li>
+      <li><div>An Order class holds data and actions<span><code>add_item()</code> and <code>total()</code>; no inline summing</span></div></li>
+      <li><div>A real package, one job per module<span><code>loafly/__init__.py</code> + config, models, extract, transform, load; runner outside</span></div></li>
+      <li><div>Config-driven, no magic numbers<span>Discount 10 → 20 in <code>config.py</code> alone turns order 5001 from 297.00 into 264.00 INR</span></div></li>
+    </ul></div>
+    <div class="cg"><h3>Robustness <small>4 / 4</small></h3><ul>
+      <li><div>Logging at the right level<span>INFO for progress, WARNING for skips and failed attempts, ERROR for giving up</span></div></li>
+      <li><div>Timestamped and saved to a file<span>Every line goes to the terminal and <code>loafly.log</code>; no <code>print</code> left</span></div></li>
+      <li><div>Exception handling around price parsing<span><code>try / except / else / finally</code>; catches <code>ValueError</code>, <code>TypeError</code>, <code>AttributeError</code></span></div></li>
+      <li><div>A working retry<span>Up to 3 attempts, 1 s apart, then an ERROR and move on</span></div></li>
+    </ul></div>
+    <div class="cg"><h3>Safety <small>4 / 4</small></h3><ul>
+      <li><div>Secret read from the environment<span><code>os.getenv("LOAFLY_API_KEY")</code>; only the last 4 characters are logged</span></div></li>
+      <li><div>Secret never in the code or in git<span><code>.gitignore</code> excludes <code>.env</code>, and the old script that held the key</span></div></li>
+      <li><div>Safe template committed instead<span><code>env.example</code> holds a placeholder value only</span></div></li>
+      <li><div>Reproducible setup<span><code>requirements.txt</code> (stdlib only) and a README covering the virtual environment</span></div></li>
+    </ul></div>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">Design decisions</span>
+  <h2>Why it is built this way</h2>
+  <div class="dec">
+    <div><h3>Catching ValueError, not just TypeError</h3><p>A blank CSV cell arrives as <code>""</code>, and <code>float("")</code> raises <code>ValueError</code>. Catching only <code>TypeError</code> and <code>AttributeError</code> would still crash, so all three are caught.</p></div>
+    <div><h3>finally counts every row</h3><p>The <code>finally</code> block runs for good and bad rows alike, which is how the log can report "Checked 32 items" alongside "skipped 3".</p></div>
+    <div><h3>Retry without a wasted wait</h3><p>Each failure logs a WARNING and waits <code>retry_wait_seconds</code>, except after the last attempt. Giving up is an ERROR, and the loop moves on to the next order.</p></div>
+    <div><h3>A 10-line .env reader</h3><p>With no third-party packages allowed, <code>config.py</code> copies <code>KEY=value</code> lines from <code>.env</code> into the environment, then <code>os.getenv</code> reads the key. Only its last 4 characters are ever logged.</p></div>
+  </div>
+</section>
+
+</div>
+</body>
+</html>
