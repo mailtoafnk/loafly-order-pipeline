@@ -1,0 +1,19 @@
+# secrets - never commit the real key
+.env
+
+# virtual environment
+.venv/
+
+# Python cache files
+__pycache__/
+*.pyc
+
+# run output
+*.log
+
+# course material (not part of the solution)
+python_assignment_assets/
+python_assignment_assets.zip
+
+# old script - still contains the hard-coded key
+legacy_orders.py

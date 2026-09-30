@@ -1,0 +1,2 @@
+# Loafly uses only the Python standard library.
+# No third-party packages are needed - nothing to pip install.
